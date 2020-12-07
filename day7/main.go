@@ -2,11 +2,20 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 )
+
+type bagType struct {
+	name    string
+	subBags []bagType
+	count   int
+}
 
 func main() {
 	file := "day7/input.csv"
@@ -38,45 +47,136 @@ func TraverseFile(filename string) {
 		bags = append(bags, bagLine)
 	}
 
-	contained := SearchThroughBags(bags)
+	name := "shiny gold"
+	contained := GetContainingBags(bags, name)
 	fmt.Printf("The briefcase can be contained in %d other bags \n", len(contained))
+
+	containing := GetContainedBags(bags, name)
+	amountContaining := CountRecursiveBags(containing.subBags) - 1
+	fmt.Printf("The briefcase contains %d other bags \n", amountContaining)
 
 }
 
-func SearchThroughBags(bags [][]string) []string {
-	baseContained := ListContained(bags, "shiny gold")
-	allContained := TraverseBagTree(bags, baseContained)
+// Part 2
+// -------------
+
+func GetContainedBags(bags [][]string, bag string) bagType {
+	allContaining := TraverseBagTreeDown(bags, bag)
+	return allContaining
+}
+
+func ListContaining(bags [][]string, contains string) []string {
+	for _, bag := range bags {
+		if strings.Contains(bag[0], contains) {
+			return ParseContainingName(bag[1])
+		}
+	}
+	return ParseContainingName("")
+}
+
+func TraverseBagTreeDown(allBags [][]string, bag string) bagType {
+	baseBag := bagType{
+		bag,
+		make([]bagType, 0),
+		0,
+	}
+
+	baseBag, _ = RecursiveAddBags(allBags, baseBag)
+
+	fmt.Printf("Bag: %v \n", baseBag)
+	return baseBag
+}
+
+func CountRecursiveBags(bags []bagType) int {
+	count := 1
+
+	for _, bag := range bags {
+		count += bag.count * CountRecursiveBags(bag.subBags)
+		// fmt.Printf("Bag %s with %d at count %d \n", bag.name, bag.count, count)
+	}
+	return count
+}
+
+func ParseContainingName(bags string) []string {
+	names := make([]string, 0)
+
+	for _, name := range strings.Split(bags, ",") {
+		name = strings.TrimSpace(name)
+		name = strings.TrimSuffix(name, ".")
+		name = PruneBagName(name)
+		names = append(names, name)
+	}
+	return names
+}
+
+func TrimToBagName(bag string) string {
+	re := regexp.MustCompile("(^[0-9]*)")
+	parsedBag := string(re.ReplaceAll([]byte(bag), []byte("")))
+	parsedBag = strings.TrimSpace(parsedBag)
+	return parsedBag
+}
+
+func GetBagNumber(bag string) int {
+	re := regexp.MustCompile("(^[0-9]*)")
+	foundNumber, _ := strconv.Atoi(re.FindString(bag))
+	return foundNumber
+}
+
+func RecursiveAddBags(allBags [][]string, bag bagType) (bagType, error) {
+	subBags := ListContaining(allBags, bag.name)
+
+	for _, bagString := range subBags {
+		if bagString == "" {
+			return bag, errors.New("End of recursion")
+		}
+		//fmt.Printf("Bag: %s \n", bagString)
+
+		newBag := bagType{
+			TrimToBagName(bagString),
+			make([]bagType, 0),
+			GetBagNumber(bagString),
+		}
+
+		subBag, err := RecursiveAddBags(allBags, newBag)
+		if err == nil {
+			bag.subBags = append(bag.subBags, subBag)
+		}
+	}
+
+	return bag, nil
+}
+
+// Part 1
+// -------------
+
+func GetContainingBags(bags [][]string, bag string) []string {
+	baseContained := ListContained(bags, bag)
+	allContained := TraverseBagTreeUp(bags, baseContained)
 	allContained = PruneListToUniques(allContained)
 	return allContained
 }
 
-func TraverseBagTree(allBags [][]string, baseBags []string) []string {
+func TraverseBagTreeUp(allBags [][]string, baseBags []string) []string {
 	containedBags := make([]string, 0)
-	loops := 0
 
 	for _, bag := range baseBags {
 		containedBags = append(containedBags, PruneBagName(bag))
 	}
-	//fmt.Printf("%#v \n", containedBags)
 
 	for {
 		bagsSize := len(containedBags)
-		//fmt.Printf("%#v \n", containedBags)
 		for _, bag := range containedBags {
 			newBags := ListContained(allBags, bag)
-			//fmt.Printf("%#v \n", bag)
 			for _, newBag := range newBags {
 				newBag = PruneBagName(newBag)
 				containedBags = append(containedBags, newBag)
 			}
 		}
-		// fmt.Printf("%#v \n", containedBags)
 		containedBags = PruneListToUniques(containedBags)
 
-		if bagsSize == len(containedBags) || loops > 10 {
+		if bagsSize == len(containedBags) {
 			break
 		}
-		loops++
 	}
 
 	return containedBags
